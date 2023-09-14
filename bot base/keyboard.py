@@ -1,7 +1,7 @@
 import types
 from telebot import types
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
 item1 = types.KeyboardButton('Водитель')
@@ -9,11 +9,13 @@ item2 = types.KeyboardButton('Арендатор')
 
 markup.add(item1, item2)
 
-menu = [
-    [InlineKeyboardButton(text="Количество заявок", callback_data="app_number"),
-    InlineKeyboardButton(text="Количество выданных пропусков", callback_data="passes_number")],
-    [InlineKeyboardButton(text="Количество автомобилей на территории", callback_data="cars_number"),
-    InlineKeyboardButton(text="Количество свободных мест для заезда", callback_data="places_number")],
-    [InlineKeyboardButton(text="Количество завершенных заявок", callback_data="complited_app_number")]
-]
-menu = InlineKeyboardMarkup(inline_keyboard=menu)
+# Определите клавиатуру для второго меню
+second_menu_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+second_menu1 = types.KeyboardButton("Количество заявок")
+second_menu2 = types.KeyboardButton("Количество выданных пропусков")
+second_menu3 = types.KeyboardButton("Количество автомобилей на территории")
+second_menu4 = types.KeyboardButton("Количество свободных мест для заезда")
+second_menu5 = types.KeyboardButton("Количество завершенных заявок")
+
+second_menu_keyboard.add(second_menu1, second_menu2, second_menu3, second_menu4, second_menu5)
+
