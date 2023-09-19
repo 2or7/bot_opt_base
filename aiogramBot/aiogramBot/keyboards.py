@@ -4,8 +4,7 @@ from aiogram.types import (ReplyKeyboardMarkup, KeyboardButton,
 main_kb = [
     [KeyboardButton(text='Арендатор'),
      KeyboardButton(text='Водитель')],
-    [KeyboardButton(text='Контакты'),
-    KeyboardButton(text='Помощь')]
+    [KeyboardButton(text='Помощь')]
 ]
 
 main = ReplyKeyboardMarkup(keyboard=main_kb,
@@ -18,6 +17,13 @@ socials_kb = [
 ]
 
 socials = InlineKeyboardMarkup(inline_keyboard=socials_kb)
+
+back_kb = [
+    [InlineKeyboardButton(text='Назад')]
+]
+
+back = InlineKeyboardMarkup(inline_keyboard=back_kb)
+
 
 drivers_info = [
     [KeyboardButton(text='Сведения о заявке'),
@@ -44,3 +50,4 @@ rentors_info = [
 rentors = ReplyKeyboardMarkup(keyboard=rentors_info,
                            resize_keyboard=True,
                            input_field_placeholder='Выберите пункт ниже: ')
+
