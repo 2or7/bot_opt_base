@@ -5,7 +5,7 @@ from aiogram.fsm.state import State, StatesGroup
 from driver_handlers import cursor, conn
 import random
 from datetime import datetime, timedelta
-
+from aiogram import types
 import keyboards as kb
 import database as db
 import driver_handlers as dh
@@ -22,46 +22,48 @@ class Form_for_auth(StatesGroup):
 class Form_for_search_car(StatesGroup):
     plate_process = State()
 
+
+@rt_router.message(lambda message: message.content_type not in ['text', 'contact'])
+async def block_files(message: types.Message):
+
+    cursor.execute("SELECT chat_id FROM rentors_employees WHERE phone_number = %s", (dh.number, ))
+    rentors_info = cursor.fetchone()
+    print('рентор = ', rentors_info)
+    if rentors_info == (None, ): 
+        await message.reply("Извините, но бот принимает файлы только от авторизованного арендатора.")
+    else:
+        await message.reply("Файл успешно отправлен!")
     
-@rt_router.message(F.text == 'Арендатор')
-async def message_to_input_login(message: Message, state: FSMContext):
-    await message.answer(f'Введите логин', reply_markup=kb.back)
-    await state.set_state(Form_for_auth.login_process)
+# @rt_router.message(F.text == 'Арендатор')
+# async def message_to_input_login(message: Message, state: FSMContext):
+
+#     await message.answer(f'Введите логин', reply_markup=kb.back)
+#     await state.set_state(Form_for_auth.login_process)
 
 
 @rt_router.message(Form_for_auth.login_process)
 async def input_login(message: Message, state: FSMContext):
     login = message.text
-    flag_login = 0
-    global rentor_id
-    for l in db.rentors:
-        if login == l["LOGIN"]:
-            rentor_id = l["ID"]
-            flag_login = 1
-            await message.answer(f'Пользователь найден! Введите пароль.', reply_markup=kb.back)
-            await state.set_state(Form_for_auth.password_process)
-    if flag_login != 1:
+    cursor.execute("SELECT * FROM rentors_employees WHERE phone_number = %s OR chat_id = %s", (dh.number, str(message.from_user.id)))
+    rentors_info = cursor.fetchone()
+    if login == rentors_info[-2]:  
+        await message.answer(f'Пользователь найден! Введите пароль.', reply_markup=kb.back)
+        await state.update_data(found_person=rentors_info)
+        await state.set_state(Form_for_auth.password_process)
+    else:
         await message.reply("Пользователь не найден! Поробуйте ещё раз.\n\n При возникновении вопросов, нажмите /help", reply_markup=kb.back)
         return
 
 
 @rt_router.message(Form_for_auth.password_process)
 async def input_password(message: Message, state: FSMContext):
+    data = await state.get_data()
+    rentors_info = data.get('found_person')
     password = message.text
-    if password == db.rentors[rentor_id]["PASSWORD"]:
-        current_time = datetime.now()
-        cursor.execute("INSERT INTO users (full_name, passport_number, user_type, event_time, chat_id_temp, phone_number) VALUES (%s, %s, %s, %s, %s, %s)",
-                        (
-                            str(message.from_user.first_name + ' ' + message.from_user.last_name), 
-                            [str(password)],
-                            False,
-                            current_time, 
-                            message.from_user.id, 
-                            dh.number
-                        )
-                        )
+    if password == rentors_info[-1]:
+        cursor.execute("UPDATE rentors_employees SET chat_id = %s WHERE phone_number = %s", (str(message.from_user.id), dh.number))
         conn.commit()
-        await message.answer(f'Вход выполнен. {db.rentors[rentor_id]["NAME"]}', reply_markup=kb.rentors)
+        await message.answer(f'Вход выполнен. {rentors_info[3]} {rentors_info[4]}', reply_markup=kb.rentors)
         await state.set_state(Form_for_auth.auth_finished)
     else:
         await message.reply("Неверный пароль! Поробуйте ещё раз. \n\n При возникновении вопросов, нажмите /help", reply_markup=kb.back)
