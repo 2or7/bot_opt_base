@@ -1,4 +1,5 @@
-from aiogram import Router, F
+from aiogram import Bot, Router, F
+import asyncio
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -7,10 +8,85 @@ import random
 from datetime import datetime, timedelta
 from aiogram import types
 import keyboards as kb
-import database as db
 import driver_handlers as dh
+import aio_pika
+import json
 
 rt_router = Router()
+
+received_messages_queue = asyncio.Queue()
+
+async def connect_to_rabbitmq():
+    connection = await aio_pika.connect_robust(
+        host='81.94.159.234',
+        login='opt_base',
+        password='optbasebot',
+        virtualhost='/'
+    )
+    return connection
+
+async def send_to_queue(event, chat_id, body):
+    try:
+        print('[ ] Sending queue...')
+        # Подключение к RabbitMQ
+        connection = await connect_to_rabbitmq()
+        channel = await connection.channel()
+
+        queue_name = 'send_queue'
+        # Подключение к очереди
+        queue = await channel.declare_queue(queue_name)
+
+        message = {"event": event, "chatid": chat_id, "body": body}
+        message_body = str(message)
+
+        # Отправление сообщения в очередь
+        await channel.default_exchange.publish(
+            aio_pika.Message(body=message_body.encode()),
+            routing_key=queue.name
+        )
+
+    except:
+        # Закрытие соединения
+        print('[x] Error detected!')
+    finally:
+        # Закрытие соединения
+        print('[o] Closed successfully!')
+        await connection.close()
+
+
+
+
+
+@rt_router.message(F.text == 'Всего заявок')
+async def consume(message: types.Message):
+    try:
+        print('[ ] Receiving queue...')
+        bot = Bot(token='6354167807:AAGnX8EmmFOPc3tgwZIWg6xqm64prvC3y6k')
+        # Подключение к RabbitMQ для второй очереди
+        connection = await connect_to_rabbitmq()
+        channel = await connection.channel()
+        queue_name = 'receive_queue'
+        # Подключение к второй очереди
+        queue = await channel.declare_queue(queue_name)
+        async with queue.iterator() as iterator:
+            async for mesage in iterator:
+                async with mesage.process():
+                    # Обработка сообщения из второй очереди
+                    text = mesage.body.decode()
+                    text_json = json.loads(text)
+                    print(text_json)
+                    print(int(text_json["chat_id"]))
+                    await bot.send_message(int(text_json["chat_id"]), text_json["text"], parse_mode='HTML')
+
+    except Exception as e:
+        # Закрытие соединения в случае ошибки
+        print(f'[x] Error detected: {e}')
+    finally:
+         if connection and connection.is_open:
+             # Закрытие соединения, если оно открыто
+             print('[o] Closed successfully!')
+             await connection.close()
+
 
 
 class Form_for_auth(StatesGroup):
@@ -25,20 +101,20 @@ class Form_for_search_car(StatesGroup):
 
 @rt_router.message(lambda message: message.content_type not in ['text', 'contact'])
 async def block_files(message: types.Message):
+    try:
+        cursor.execute("SELECT chat_id FROM rentors_employees WHERE phone_number = %s", (dh.number, ))
+        rentors_info = cursor.fetchone()
+        if rentors_info == None:
+            await message.reply("Извините, но бот принимает файлы только от авторизованного арендатора.")
+        else:
+            file_name = message.document.file_name
+            await message.reply("Файл успешно отправлен!")
+            # Отправляем сообщение в очередь
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            await send_to_queue(event="document_received", chat_id=message.chat.id, body=f"File received: {file_name} at time: {current_time}")
+    except:
+        await message.reply("Перед отправкой файла, предоставьте номер телефона.", reply_markup=kb.share_keyboard)
 
-    cursor.execute("SELECT chat_id FROM rentors_employees WHERE phone_number = %s", (dh.number, ))
-    rentors_info = cursor.fetchone()
-    print('рентор = ', rentors_info)
-    if rentors_info == (None, ): 
-        await message.reply("Извините, но бот принимает файлы только от авторизованного арендатора.")
-    else:
-        await message.reply("Файл успешно отправлен!")
-    
-# @rt_router.message(F.text == 'Арендатор')
-# async def message_to_input_login(message: Message, state: FSMContext):
-
-#     await message.answer(f'Введите логин', reply_markup=kb.back)
-#     await state.set_state(Form_for_auth.login_process)
 
 
 @rt_router.message(Form_for_auth.login_process)
@@ -46,7 +122,7 @@ async def input_login(message: Message, state: FSMContext):
     login = message.text
     cursor.execute("SELECT * FROM rentors_employees WHERE phone_number = %s OR chat_id = %s", (dh.number, str(message.from_user.id)))
     rentors_info = cursor.fetchone()
-    if login == rentors_info[-2]:  
+    if login == rentors_info[-2]:
         await message.answer(f'Пользователь найден! Введите пароль.', reply_markup=kb.back)
         await state.update_data(found_person=rentors_info)
         await state.set_state(Form_for_auth.password_process)
@@ -68,11 +144,6 @@ async def input_password(message: Message, state: FSMContext):
     else:
         await message.reply("Неверный пароль! Поробуйте ещё раз. \n\n При возникновении вопросов, нажмите /help", reply_markup=kb.back)
         return
-
-
-@rt_router.message(F.text == 'Всего заявок')
-async def info(message: Message):
-    await message.answer(f'Всего заявок: {random.randint(10, 50)}')
 
 
 @rt_router.message(F.text == 'Пропусков выдано')
