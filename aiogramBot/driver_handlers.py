@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 import keyboards as kb
 import psycopg2
 
-conn = psycopg2.connect(dbname='opt_base', user='postgres', password='postgres', host='127.0.0.1')
 
+conn = psycopg2.connect(dbname='opt_base', user='postgres', password='postgres', host='127.0.0.1')
 cursor = conn.cursor()
 
 router = Router()
@@ -40,32 +40,24 @@ async def start_2(message: Message, state: FSMContext):
     print(number)
     chat_id = str(message.from_user.id)
 
-    
 
-    # Проверяем, существует ли запись с данным chat_id_temp
+    # Проверяем, существует ли запись с данным chat_id
     cursor.execute("SELECT * FROM drivers WHERE drivers_phone = %s OR chat_id = %s", (number, chat_id))
     drivers_info = cursor.fetchone()
     
-
     cursor.execute("SELECT * FROM rentors_employees WHERE phone_number = %s OR chat_id = %s", (number, chat_id))
     rentors_info = cursor.fetchone()
-    # if password == rentors_info[-1]:
-    #     cursor.execute("UPDATE rentors_employees SET chat_id = %s WHERE phone_number = %s", (str(message.from_user.id), dh.number))
-    #     conn.commit()
-    #     await message.answer(f'Вход выполнен. {rentors_info[3]} {rentors_info[4]}', reply_markup=kb.rentors)
-    #     await state.set_state(Form_for_auth.auth_finished)
-    # else:
-    #     await message.reply("Неверный пароль! Поробуйте ещё раз. \n\n При возникновении вопросов, нажмите /help", reply_markup=kb.back)
-    #     return
     if drivers_info:
         if drivers_info[-1] == message.from_user.id or drivers_info[-2] == number:
             await message.answer(f'Добро пожаловать {drivers_info[1]} {drivers_info[2]} \nВыберите один из пунктов меню: ', reply_markup=kb.drivers, parse_mode='HTML')
         else:
             await message.answer('Добро пожаловать, введите ваши паспортные данные: ')
             await state.set_state(Driver.GET_PASSPORT)
-            
     elif rentors_info:
-        if rentors_info[-1] == message.from_user.id or rentors_info[2] == number:
+        if rentors_info[-3] != None:
+            await message.answer(f'Вход выполнен. {rentors_info[3]} {rentors_info[4]}', reply_markup=kb.rentors)
+            await state.set_state(Form_for_auth.auth_finished)
+        elif rentors_info[-1] == message.from_user.id or rentors_info[2] == number:
             await message.answer(f'Введите логин', reply_markup=kb.back)
             await state.set_state(Form_for_auth.login_process)
         else:
@@ -88,10 +80,6 @@ async def cancel_func(message: Message, state: FSMContext):
                          reply_markup=kb.share_keyboard)
 
 
-# @router.message(F.text == 'Водитель')
-# async def driver(message: Message, state: FSMContext):
-#     await message.answer("Введите, пожалуйста, паспортные данные без пробелов: ", reply_markup=kb.back)
-#     await state.set_state(Driver.passport_finished)
 
 
 @router.message(Driver.GET_PASSPORT)
