@@ -1,3 +1,4 @@
+
 from aiogram import Bot, Dispatcher
 import asyncio
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -11,15 +12,11 @@ async def main():
     dp.include_router(router)
     dp.include_router(rt_router)
     await dp.start_polling(bot)
-  
+
 
 
 if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print('Exit')
-
-
-
-
+        print("exit")
