@@ -1,4 +1,8 @@
 from aiogram import Router, F
+import asyncio
+import aio_pika
+import json
+from aiogram import Bot
 from aiogram.types import Message
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -9,6 +13,43 @@ from datetime import datetime, timedelta
 
 import keyboards as kb
 import psycopg2
+
+received_messages_queue = asyncio.Queue()
+
+async def connect_to_rabbitmq():
+    connection = await aio_pika.connect_robust(
+        host='81.94.159.234',
+        login='opt_base',
+        password='optbasebot',
+        virtualhost='/'
+    )
+    return connection
+
+
+
+
+async def aue(message: Message):
+    # Perform connection
+    connection = await connect_to_rabbitmq()
+    bot = Bot(token='6354167807:AAGnX8EmmFOPc3tgwZIWg6xqm64prvC3y6k')
+    async with connection:
+        # Creating a channel
+        channel = await connection.channel()
+        print('Функция запущена1')
+        # Declaring queue
+        queue = await channel.declare_queue("receive_queue")
+
+        async def on_message(message: Message):
+            print('Функция запущена2')
+            text = message.body.decode()
+            text_json = json.loads(text)
+            print(text_json)
+            print(int(text_json["chat_id"]))
+            await bot.send_message(int(text_json["chat_id"]), text_json["text"], parse_mode='HTML')
+
+        # Start listening the queue with name 'receive_queue'
+        await queue.consume(on_message)
+
 
 
 conn = psycopg2.connect(dbname='opt_base', user='postgres', password='postgres', host='127.0.0.1')
@@ -30,7 +71,7 @@ class Driver(StatesGroup):
 async def cmd_start(message: Message):
     await message.reply("Привет, чтобы отправить мне свой номер телефона, нажмите на кнопку ниже.",
                         reply_markup=kb.share_keyboard, parse_mode='HTML')
-
+    
     
 @router.message(lambda message: message.contact is not None)
 async def start_2(message: Message, state: FSMContext):
@@ -39,7 +80,7 @@ async def start_2(message: Message, state: FSMContext):
     number = temp[1:]
     print(number)
     chat_id = str(message.from_user.id)
-
+    await aue(message)
 
     # Проверяем, существует ли запись с данным chat_id
     cursor.execute("SELECT * FROM drivers WHERE drivers_phone = %s OR chat_id = %s", (number, chat_id))

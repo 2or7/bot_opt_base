@@ -1,20 +1,19 @@
 from aiogram import Bot, Router, F
-import asyncio
+
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from driver_handlers import cursor, conn
+from aio_pika.abc import AbstractIncomingMessage
 import random
 from datetime import datetime, timedelta
 from aiogram import types
 import keyboards as kb
 import driver_handlers as dh
 import aio_pika
-import json
+
 
 rt_router = Router()
-
-received_messages_queue = asyncio.Queue()
 
 async def connect_to_rabbitmq():
     connection = await aio_pika.connect_robust(
@@ -52,42 +51,6 @@ async def send_to_queue(event, chat_id, body):
         # Закрытие соединения
         print('[o] Closed successfully!')
         await connection.close()
-
-
-
-
-
-@rt_router.message(F.text == 'Всего заявок')
-async def consume(message: types.Message):
-    try:
-        print('[ ] Receiving queue...')
-        bot = Bot(token='6354167807:AAGnX8EmmFOPc3tgwZIWg6xqm64prvC3y6k')
-        # Подключение к RabbitMQ для второй очереди
-        connection = await connect_to_rabbitmq()
-        channel = await connection.channel()
-        queue_name = 'receive_queue'
-        # Подключение к второй очереди
-        queue = await channel.declare_queue(queue_name)
-        async with queue.iterator() as iterator:
-            async for mesage in iterator:
-                async with mesage.process():
-                    # Обработка сообщения из второй очереди
-                    text = mesage.body.decode()
-                    text_json = json.loads(text)
-                    print(text_json)
-                    print(int(text_json["chat_id"]))
-                    await bot.send_message(int(text_json["chat_id"]), text_json["text"], parse_mode='HTML')
-
-    except Exception as e:
-        # Закрытие соединения в случае ошибки
-        print(f'[x] Error detected: {e}')
-    finally:
-         if connection and connection.is_open:
-             # Закрытие соединения, если оно открыто
-             print('[o] Closed successfully!')
-             await connection.close()
-
-
 
 class Form_for_auth(StatesGroup):
     login_process = State()
@@ -139,7 +102,11 @@ async def input_password(message: Message, state: FSMContext):
     if password == rentors_info[-1]:
         cursor.execute("UPDATE rentors_employees SET chat_id = %s WHERE phone_number = %s", (str(message.from_user.id), dh.number))
         conn.commit()
+        
+        
+        
         await message.answer(f'Вход выполнен. {rentors_info[3]} {rentors_info[4]}', reply_markup=kb.rentors)
+        
         await state.set_state(Form_for_auth.auth_finished)
     else:
         await message.reply("Неверный пароль! Поробуйте ещё раз. \n\n При возникновении вопросов, нажмите /help", reply_markup=kb.back)
@@ -149,7 +116,7 @@ async def input_password(message: Message, state: FSMContext):
 @rt_router.message(F.text == 'Пропусков выдано')
 async def info(message: Message):
     await message.answer(f'Пропусков выдано: {random.randint(10, 50)}')
-
+    await aue(message)
 
 @rt_router.message(F.text == 'Автомобилей на территории')
 async def info(message: Message):
