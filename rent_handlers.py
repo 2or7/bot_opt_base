@@ -1,16 +1,16 @@
 from aiogram import Bot, Router, F
-
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from driver_handlers import cursor, conn
-from aio_pika.abc import AbstractIncomingMessage
 import random
-from datetime import datetime, timedelta
+from datetime import datetime
 from aiogram import types
 import keyboards as kb
 import driver_handlers as dh
 import aio_pika
+
+
 
 
 rt_router = Router()
@@ -22,7 +22,9 @@ async def connect_to_rabbitmq():
         password='optbasebot',
         virtualhost='/'
     )
+    
     return connection
+
 
 async def send_to_queue(event, chat_id, body):
     try:
@@ -51,6 +53,9 @@ async def send_to_queue(event, chat_id, body):
         # Закрытие соединения
         print('[o] Closed successfully!')
         await connection.close()
+        
+
+
 
 class Form_for_auth(StatesGroup):
     login_process = State()
@@ -65,9 +70,11 @@ class Form_for_search_car(StatesGroup):
 @rt_router.message(lambda message: message.content_type not in ['text', 'contact'])
 async def block_files(message: types.Message):
     try:
+        
         cursor.execute("SELECT chat_id FROM rentors_employees WHERE phone_number = %s", (dh.number, ))
         rentors_info = cursor.fetchone()
-        if rentors_info == None:
+        print(f'rentint ={rentors_info}')
+        if rentors_info == (None,):
             await message.reply("Извините, но бот принимает файлы только от авторизованного арендатора.")
         else:
             file_name = message.document.file_name
@@ -75,6 +82,7 @@ async def block_files(message: types.Message):
             # Отправляем сообщение в очередь
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             await send_to_queue(event="document_received", chat_id=message.chat.id, body=f"File received: {file_name} at time: {current_time}")
+
     except:
         await message.reply("Перед отправкой файла, предоставьте номер телефона.", reply_markup=kb.share_keyboard)
 
@@ -113,10 +121,13 @@ async def input_password(message: Message, state: FSMContext):
         return
 
 
+@rt_router.message(F.text == 'Всего заявок')
+async def info(message: Message):
+    await message.answer(f'Всего заявок: {random.randint(10, 50)}')
+
 @rt_router.message(F.text == 'Пропусков выдано')
 async def info(message: Message):
     await message.answer(f'Пропусков выдано: {random.randint(10, 50)}')
-    await aue(message)
 
 @rt_router.message(F.text == 'Автомобилей на территории')
 async def info(message: Message):
@@ -142,15 +153,16 @@ async def input_plate(message: Message, state: FSMContext):
 @rt_router.message(Form_for_search_car.plate_process)
 async def detaile_info(message: Message):
     plate = message.text
+    print(plate)
     flag_plate = 0
-    for d in db.drivers:
-        if plate == d["VEHICLE_PLATE"]:
-            flag_plate = 1
-            await message.answer(f"Информация о человеке:\n"
-                                 f"Полное имя: {d['FULL_NAME']}\n"
-                                 f"Номер автомобиля: {d['VEHICLE_PLATE']}\n"
-                                 f"Тип автомобиля: {d['VEHICLE_TYPE']}\n"
-                                 f"Состояние разрешения: {d['PERMIT_STATE']}")
-    if flag_plate != 1:
+    cursor.execute('SELECT * FROM applications WHERE car_number = %s', (plate, ))
+    driver_app = cursor.fetchone()
+    if driver_app != None:
+        await message.answer(f"Информация о человеке:\n"
+                                f"Полное имя: {driver_app[4] + ' ' + driver_app[5] + ' ' + driver_app[6]}\n"
+                                f"Номер автомобиля: {driver_app[2]}\n"
+                                f"Тип автомобиля: {driver_app[3]}\n"
+                                f"Состояние разрешения: Processing...")
+    else:
         await message.reply("Автомобиля нет в базе данных. Попробуйте еще раз. \n\n При возникновении вопросов, нажмите /help")
         return

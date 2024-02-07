@@ -1,55 +1,16 @@
-from aiogram import Router, F
-import asyncio
+from aiogram import Router, F, types
 import aio_pika
-import json
-from aiogram import Bot
 from aiogram.types import Message
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-
+from aiogram import Bot
 import random
 from datetime import datetime, timedelta
-
+import json
 import keyboards as kb
 import psycopg2
-
-received_messages_queue = asyncio.Queue()
-
-async def connect_to_rabbitmq():
-    connection = await aio_pika.connect_robust(
-        host='81.94.159.234',
-        login='opt_base',
-        password='optbasebot',
-        virtualhost='/'
-    )
-    return connection
-
-
-
-
-async def aue(message: Message):
-    # Perform connection
-    connection = await connect_to_rabbitmq()
-    bot = Bot(token='6354167807:AAGnX8EmmFOPc3tgwZIWg6xqm64prvC3y6k')
-    async with connection:
-        # Creating a channel
-        channel = await connection.channel()
-        print('Функция запущена1')
-        # Declaring queue
-        queue = await channel.declare_queue("receive_queue")
-
-        async def on_message(message: Message):
-            print('Функция запущена2')
-            text = message.body.decode()
-            text_json = json.loads(text)
-            print(text_json)
-            print(int(text_json["chat_id"]))
-            await bot.send_message(int(text_json["chat_id"]), text_json["text"], parse_mode='HTML')
-
-        # Start listening the queue with name 'receive_queue'
-        await queue.consume(on_message)
-
+import asyncio
 
 
 conn = psycopg2.connect(dbname='opt_base', user='postgres', password='postgres', host='127.0.0.1')
@@ -66,23 +27,65 @@ class Driver(StatesGroup):
     GET_PASSPORT = State()
     driver_data = State()
 
+async def connect_to_rabbitmq() -> str:
+    connection = await aio_pika.connect_robust(
+        host='81.94.159.234',
+        login='opt_base',
+        password='optbasebot',
+        virtualhost='/'
+    )
+    return connection
 
 @router.message(Command("start", ignore_case=True))
 async def cmd_start(message: Message):
     await message.reply("Привет, чтобы отправить мне свой номер телефона, нажмите на кнопку ниже.",
                         reply_markup=kb.share_keyboard, parse_mode='HTML')
-    
-    
+
+
+
+bot = Bot(token='6354167807:AAGnX8EmmFOPc3tgwZIWg6xqm64prvC3y6k')
+
+async def consume():
+    #try:
+    print('[ ] Receiving queue...')
+    # Подключение к RabbitMQ для второй очереди
+    connection = await connect_to_rabbitmq()
+    channel = await connection.channel()
+    queue_name = 'receive_queue'
+    # Подключение к второй очереди
+    queue = await channel.declare_queue(queue_name)
+    while True:
+        try:
+            message = await queue.get(timeout=2)
+            if message:
+                await process_message(message)
+                
+                await asyncio.sleep(3)
+        except aio_pika.exceptions.QueueEmpty:
+            await asyncio.sleep(3)
+
+
+
+async def process_message(message: types.Message):
+    body = message.body.decode()
+    body_json = json.loads(body)
+    print(f"Received message: {body}")
+    await bot.send_message(chat_id=int(body_json["chat_id"]), text=body_json["text"], parse_mode='HTML')
+
+
 @router.message(lambda message: message.contact is not None)
-async def start_2(message: Message, state: FSMContext):
+async def login(message: Message, state: FSMContext):
     temp = str(message.contact.phone_number)
     global number
-    number = temp[1:]
+    if '+' == temp[0]:
+        number = temp[1:]
+    else:
+        number = temp
+
     print(number)
     chat_id = str(message.from_user.id)
-    await aue(message)
-
-    # Проверяем, существует ли запись с данным chat_id
+    
+   
     cursor.execute("SELECT * FROM drivers WHERE drivers_phone = %s OR chat_id = %s", (number, chat_id))
     drivers_info = cursor.fetchone()
     
@@ -144,8 +147,8 @@ async def passport_check(message: Message, state: FSMContext):
         conn.commit()
         await message.answer(f"Паспортные данные верны. Добро пожаловать {driver_app[4]} {driver_app[5]} {driver_app[6]}. "f"\nПродолжим. Выберите один из пунктов меню: ",
                                 reply_markup=kb.drivers, parse_mode='HTML')
-        
-        await state.update_data(found_person=driver_app)
+
+        await state.update_data(passport_number=user_input)  # Store passport_number in the state
         await state.set_state(Driver.driver_data)
     else:
         await message.reply("Паспорта нет в базе данных. Попробуйте еще раз. \n\n При возникновении вопросов, нажмите /help")
@@ -156,9 +159,11 @@ async def passport_check(message: Message, state: FSMContext):
 
 @router.message(F.text == 'Данные о заявке')
 async def drivers_info(message: Message, state: FSMContext):
-
-    data = await state.get_data()
-    driver_app = data.get('found_person')
+    state_data = await state.get_data()
+    print('number= ', number)
+    cursor.execute('SELECT * FROM applications JOIN drivers ON applications.driver_passport = drivers.passport_number WHERE drivers.drivers_phone = %s', (number, ))
+    driver_app = cursor.fetchone()
+    print(driver_app)
 
     current_time = datetime.now()
     random_time_delta = timedelta(days=random.randint(1, 30),
@@ -172,7 +177,7 @@ async def drivers_info(message: Message, state: FSMContext):
     random_past_time_str = random_past_time.strftime("%Y-%m-%d %H:%M:%S")
 
     await message.answer(f"Информация о человеке:\n"
-                            f"Ключ заявки: {driver_app[-1]}\n"
+                            f"Ключ заявки: {driver_app[0]}\n"
                             f"Полное имя: {driver_app[4] + ' ' + driver_app[5] + ' ' + driver_app[6]}\n"
                             f"Номер автомобиля: {driver_app[2]}\n"
                             f"Тип автомобиля: {driver_app[3]}\n"
@@ -192,3 +197,4 @@ async def car_amount(message: Message):
 async def car_amount(message: Message):
     car_am = random.randint(10, 50)
     await message.answer(f'Количество машин в очереди: {car_am}')
+
